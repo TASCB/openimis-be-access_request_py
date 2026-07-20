@@ -19,6 +19,18 @@ class RequestType(models.TextChoices):
     ACTIVATE = 'ACTIVATE', _('Activation of Existing user')
 
 
+class UserCategory(models.TextChoices):
+    TASAF_STAFF = 'TASAF_STAFF', _('TASAF Staff')      # HQ staff, no location
+    PAA_STAFF = 'PAA_STAFF', _('PAA Staff')            # placed in the location hierarchy
+    OTHER = 'OTHER', _('Other')                        # external, org + job title
+
+
+class AdministrativeLevel(models.TextChoices):
+    """Depth of the location the applicant is scoped to (PAA staff only)."""
+    PAA = 'PAA', _('PAA')                              # Region + District
+    VILLAGE = 'VILLAGE', _('Village')                 # Region + District + Ward + Village
+
+
 class RequestStatus(models.TextChoices):
     SUBMITTED = 'SUBMITTED', _('Submitted')
     MANAGER_APPROVED = 'MANAGER_APPROVED', _('Manager Approved')
@@ -66,11 +78,23 @@ class AccessRequest(HistoryModel):
 
     full_name = models.CharField(max_length=255, blank=False, null=False)
     organization_paa = models.CharField(max_length=255, blank=True, null=True)
-    section = models.CharField(max_length=255, blank=True, null=True)
+    section = models.CharField(max_length=255, blank=True, null=True)  # label snapshot of section_group
     designation = models.CharField(max_length=255, blank=True, null=True)
     email = models.CharField(max_length=255, blank=False, null=False)
     phone = models.CharField(max_length=50, blank=True, null=True)
     applicant_signature = models.TextField(blank=True, null=True)
+
+    # Section = an openIMIS User Group (django auth.Group); the id is the identifier stored,
+    # the name is what the applicant sees. `section` above keeps a denormalised label snapshot.
+    section_group = models.ForeignKey(
+        'auth.Group', on_delete=models.DO_NOTHING, blank=True, null=True,
+        related_name='access_requests')
+
+    user_category = models.CharField(
+        max_length=20, choices=UserCategory.choices, blank=True, null=True)
+    # Only for PAA staff; decides how deep `requested_location` is captured.
+    administrative_level = models.CharField(
+        max_length=20, choices=AdministrativeLevel.choices, blank=True, null=True)
 
     profile = models.ForeignKey(
         AccessProfile, on_delete=models.DO_NOTHING, blank=True, null=True,

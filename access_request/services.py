@@ -16,6 +16,7 @@ hold — the public "profile" is only a suggestion.
 import logging
 from datetime import datetime
 
+from django.contrib.auth.models import Group
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -77,8 +78,8 @@ class AccessRequestService:
         """Create an inert request from the *untrusted* public form.
 
         ``payload`` keys: request_type, full_name, organization_paa, section,
-        designation, email, phone, applicant_signature, profile_id (uuid),
-        requested_location_id (int)."""
+        section_group_id (auth.Group id), designation, email, phone, applicant_signature,
+        user_category, administrative_level, profile_id (uuid), requested_location_id (int)."""
         try:
             with transaction.atomic():
                 profile = None
@@ -86,24 +87,39 @@ class AccessRequestService:
                     profile = AccessProfile.objects.filter(
                         id=payload['profile_id'], is_active=True, is_deleted=False).first()
 
+                # Resolve the Section user-group and snapshot its name as the label.
+                section_group_id = payload.get('section_group_id') or None
+                section_label = payload.get('section')
+                if section_group_id:
+                    grp = Group.objects.filter(id=section_group_id).first()
+                    if grp:
+                        section_label = grp.name
+                    else:
+                        section_group_id = None
+
                 req = AccessRequest(
                     reference_code=generate_reference_code(),
                     request_type=payload.get('request_type') or RequestType.NEW,
                     full_name=(payload.get('full_name') or '').strip(),
                     organization_paa=payload.get('organization_paa'),
-                    section=payload.get('section'),
+                    section=section_label,
+                    section_group_id=section_group_id,
                     designation=payload.get('designation'),
                     email=(payload.get('email') or '').strip(),
                     phone=(payload.get('phone') or '').strip(),
                     applicant_signature=payload.get('applicant_signature'),
+                    user_category=payload.get('user_category') or None,
+                    administrative_level=payload.get('administrative_level') or None,
                     profile=profile,
                     requested_location_id=payload.get('requested_location_id'),
                     status=RequestStatus.SUBMITTED,
                 )
-                # Public submit has no logged-in user → use the system audit id.
-                req.user_created_id = SYSTEM_AUDIT_USER_ID
-                req.user_updated_id = SYSTEM_AUDIT_USER_ID
-                req.save(username=None)
+                # Public submit has no logged-in user → record it against the system core user
+                # (HistoryModel.save needs a real user, not just an audit id).
+                system_user = self.user if getattr(self.user, 'username', None) else self._system_core_user()
+                if not system_user:
+                    raise RuntimeError(_("No system user available to record the request"))
+                req.save(user=system_user)
 
                 # The two-level Manager→ICT sign-off is owned entirely by the generic Approval
                 # Engine (flow ACCESS_REQUEST_ACCOUNT). It creates the steps + the Tasks inbox and,

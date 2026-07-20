@@ -20,6 +20,23 @@ DEFAULT_PROFILES = [
     ('READ_ONLY_VIEWER', 'Read-only Viewer', 'View dashboards and reports without edit access'),
 ]
 
+SECTION_USER_GROUPS = [
+    'Executive Office and Corporate Governance',
+    'Internal Audit and Assurance',
+    'Finance, Disbursement and E Payment',
+    'Administration, Human Resources, Registry and Logistics',
+    'ICT, Systems and Digital Delivery',
+    'Programs, Productive Cash Transfer and Economic Inclusion',
+    'Climate Smart Public Works, Targeted Infrastructure, Safeguards and GRM',
+    'Monitoring, Evaluation and Data',
+]
+
+# PAA (village-level) sections shown only to PAA staff on the public form. Seeded as both
+# auth.Group sections (selectable in the dropdown) and matching core.Role rows carrying one
+# baseline right — a placeholder to be refined later via the Roles admin.
+PAA_SECTION_GROUPS = ['TMO', 'PSSC', 'PSSNA']
+PAA_ROLE_BASIC_RIGHTS = [101001]  # insuree/family search — most basic openIMIS right
+
 DEFAULT_CONFIG = {
     'gql_request_search_perms': ['230101'],
     'gql_request_view_perms': ['230102'],
@@ -27,12 +44,13 @@ DEFAULT_CONFIG = {
     'gql_ict_approve_perms': ['230202'],
     'gql_profile_manage_perms': ['230301'],
     'public_submit_enabled': True,
-    'submit_rate_max': 10,          # submissions per IP per window
-    'submit_rate_window': 60,       # seconds
-    'captcha_enabled': False,       # wire a provider (Turnstile/hCaptcha) then flip on
-    'credential_delivery': 'SET_PASSWORD_LINK',   # or 'TEMP_PASSWORD'
+    'submit_rate_max': 10,          
+    'submit_rate_window': 60,      
+    'captcha_enabled': False,      
+    'credential_delivery': 'SET_PASSWORD_LINK',  
     'default_user_language': 'en',
     'seed_profiles': True,
+    'seed_sections': True,          # seed the RBAC user groups as auth.Group "sections"
 }
 
 ALL_RIGHTS = [
@@ -58,6 +76,7 @@ class AccessRequestConfig(AppConfig):
     credential_delivery = 'SET_PASSWORD_LINK'
     default_user_language = 'en'
     seed_profiles = True
+    seed_sections = True
 
     def ready(self):
         from core.models import ModuleConfiguration
@@ -84,6 +103,12 @@ def on_post_migrate(sender, **kwargs):
             _seed_profiles(apps)
     except Exception as exc:
         logger.warning("access_request: profile seeding skipped (%s)", exc)
+    try:
+        if AccessRequestConfig.seed_sections:
+            _seed_sections(apps)
+            _seed_paa_roles(apps)
+    except Exception as exc:
+        logger.warning("access_request: section seeding skipped (%s)", exc)
 
 
 def _seed_admin_rights(apps):
@@ -95,6 +120,30 @@ def _seed_admin_rights(apps):
     for right_id in ALL_RIGHTS:
         if not RoleRight.objects.filter(role=role, right_id=right_id, validity_to__isnull=True).exists():
             RoleRight.objects.create(role=role, right_id=right_id, audit_user_id=1)
+
+
+def _seed_sections(apps):
+    """Idempotently ensure the RBAC user groups exist as django auth.Group rows (the public
+    form's Section dropdown loads from these)."""
+    Group = apps.get_model('auth', 'Group')
+    for name in SECTION_USER_GROUPS + PAA_SECTION_GROUPS:
+        Group.objects.get_or_create(name=name)
+
+
+def _seed_paa_roles(apps):
+    """Idempotently ensure the PAA sections (TMO/PSSC/PSSNA) also exist as core.Role rows with a
+    baseline right, so they carry some permission out of the box (edited later via the admin)."""
+    Role = apps.get_model('core', 'Role')
+    RoleRight = apps.get_model('core', 'RoleRight')
+    for name in PAA_SECTION_GROUPS:
+        role = Role.objects.filter(name=name, validity_to__isnull=True).first()
+        if not role:
+            role = Role.objects.create(
+                name=name, uuid=uuid.uuid4(), is_system=0, is_blocked=False, audit_user_id=1,
+            )
+        for right_id in PAA_ROLE_BASIC_RIGHTS:
+            if not RoleRight.objects.filter(role=role, right_id=right_id, validity_to__isnull=True).exists():
+                RoleRight.objects.create(role=role, right_id=right_id, audit_user_id=1)
 
 
 def _seed_profiles(apps):
