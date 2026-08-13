@@ -134,9 +134,12 @@ class AccessRequestService:
             return output_exception(model_name='AccessRequest', method='submit', exception=exc)
 
     # -- provisioning (after the engine reaches ICT_APPROVED) --------------
+    @register_service_signal('access_request_service.provision')
     def provision(self, request_id, role_ids, username, district_ids=None):
         """Create (or reactivate) the core interactive user and email a set-password
-        link.  ``role_ids`` are the approver-CONFIRMED core Role ids."""
+        link.  ``role_ids`` are the approver-CONFIRMED core Role ids.
+
+        This, not the approval finalising, is the moment the account exists."""
         try:
             check_authentication(self.user)
             if not self.user.has_perms(AccessRequestConfig.gql_ict_approve_perms):
