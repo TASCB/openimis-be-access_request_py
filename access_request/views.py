@@ -14,9 +14,12 @@ Endpoints:
   GET  /api/access_request/status/<ref_code>/   → coarse status by reference code
 """
 import logging
+import re
 
 from django.contrib.auth.models import Group
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from rest_framework import views
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -26,6 +29,7 @@ from location.models import Location
 from access_request.apps import AccessRequestConfig
 from access_request.models import (
     AccessProfile, AccessRequest, RequestType, UserCategory, AdministrativeLevel,
+    TERMINAL_STATUSES,
 )
 from access_request.services import AccessRequestService
 
@@ -40,6 +44,33 @@ PUBLIC_STATUS = {
     'REJECTED': 'not_approved',
     'FAILED': 'in_review',
 }
+
+
+# Tanzanian numbers: 9 national digits after 0 / 255 — mobile 6x/7x, landline 2x.
+_PHONE_NATIONAL_RE = re.compile(r'^[267]\d{8}$')
+
+# Mirror the model column sizes so an over-long value is a field error, not a DB error.
+_MAX_LENGTHS = {'full_name': 255, 'email': 254, 'phone': 50, 'organization_paa': 255, 'designation': 255}
+
+
+def normalize_phone(raw):
+    """Return the number as +255XXXXXXXXX, or None when it is not a Tanzanian number."""
+    digits = re.sub(r'[\s\-().]', '', raw or '')
+    if digits.startswith('+'):
+        digits = digits[1:]
+        if not digits.startswith('255'):
+            return None
+    if digits.startswith('255'):
+        digits = digits[3:]
+    elif digits.startswith('0'):
+        digits = digits[1:]
+    return f'+255{digits}' if _PHONE_NATIONAL_RE.match(digits) else None
+
+
+def client_ip(request):
+    """The applicant's IP for rate limiting: nginx sets X-Real-IP; REMOTE_ADDR alone would be
+    the nginx address once the frontend container gets a new IP."""
+    return request.META.get('HTTP_X_REAL_IP') or request.META.get('REMOTE_ADDR') or 'anon'
 
 
 def _passes_captcha(data):
@@ -117,8 +148,7 @@ class AccessRequestSubmitView(views.APIView):
         if not AccessRequestConfig.public_submit_enabled:
             return Response({'error': 'disabled'}, status=403)
 
-        ip = request.META.get('REMOTE_ADDR', 'anon')
-        key = f'access_request:submit:rl:{ip}'
+        key = f'access_request:submit:rl:{client_ip(request)}'
         count = cache.get(key, 0)
         if count >= AccessRequestConfig.submit_rate_max:
             return Response({'error': 'rate_limited'}, status=429)
@@ -159,6 +189,29 @@ class AccessRequestSubmitView(views.APIView):
         if missing:
             return Response({'error': 'missing_fields', 'fields': missing}, status=400)
 
+        invalid = {}
+        for field, limit in _MAX_LENGTHS.items():
+            if len(str(data.get(field) or '').strip()) > limit:
+                invalid[field] = 'too_long'
+        if 'email' not in invalid:
+            try:
+                validate_email(email)
+            except ValidationError:
+                invalid['email'] = 'invalid'
+        phone = str(data.get('phone') or '').strip()
+        if phone and 'phone' not in invalid:
+            phone = normalize_phone(phone)
+            if not phone:
+                invalid['phone'] = 'invalid'
+        if invalid:
+            return Response({'error': 'invalid_fields', 'fields': invalid}, status=400)
+
+        # One open application per email: a resubmission would otherwise start a second
+        # Manager→ICT approval for the same person.
+        if AccessRequest.objects.filter(email__iexact=email, is_deleted=False) \
+                .exclude(status__in=TERMINAL_STATUSES).exists():
+            return Response({'error': 'duplicate_request', 'fields': {'email': 'duplicate'}}, status=409)
+
         request_type = data.get('request_type')
         if request_type not in dict(RequestType.choices):
             request_type = RequestType.NEW
@@ -171,7 +224,7 @@ class AccessRequestSubmitView(views.APIView):
             'section_group_id': data.get('section_group_id'),
             'designation': data.get('designation'),
             'email': email,
-            'phone': data.get('phone'),
+            'phone': phone or None,
             'applicant_signature': data.get('applicant_signature'),
             'user_category': category,
             'administrative_level': admin_level,

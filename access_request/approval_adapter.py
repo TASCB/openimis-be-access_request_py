@@ -1,18 +1,3 @@
-"""Domain adapter: consumes the generic Approval Engine's terminal outcome.
-
-Bound to the ``approval_service.finalized`` service signal (see ``signals``). The engine owns the
-two-level sign-off (Manager → ICT); this adapter mirrors the terminal outcome back onto the
-``AccessRequest`` so the existing provisioning action and the public status page keep working:
-
-- APPROVED (both steps signed)  -> ``AccessRequest.status = ICT_APPROVED`` (ready to provision).
-  Provisioning stays a SEPARATE explicit action because it mints a core user and needs the approver
-  to confirm role ids / username — the engine does not capture those.
-- REJECTED                       -> ``AccessRequest.status = REJECTED`` + reject notification.
-- CANCELLED                      -> left as-is (no cancelled status); the ApprovalRequest is the record.
-
-The mirror uses ``.update()`` (no audit user needed) because the authoritative audit trail lives in
-the engine's ApprovalRequest/Step/Decision rows; ``AccessRequest.status`` is a denormalised mirror.
-"""
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +13,7 @@ class AccessRequestApprovalAdapter:
             result = kwargs.get('result') or {}
             data = result.get('data') or {}
             if data.get('domain') != DOMAIN:
-                return  # another domain's request — ignore
+                return
 
             from approval.models import ApprovalRequest
             from access_request.models import AccessRequest, RequestStatus
@@ -50,7 +35,6 @@ class AccessRequestApprovalAdapter:
                 AccessRequest.objects.filter(id=ar.id).update(status=RequestStatus.REJECTED)
                 AccessRequestService(None)._notify_rejected(ar)
                 logger.info("access_request %s -> REJECTED via approval engine", ar.reference_code)
-            # CANCELLED: no cancelled status on AccessRequest — leave it; engine holds the record.
         except Exception as exc:
             logger.error("access_request approval adapter failed", exc_info=exc)
             return [str(exc)]

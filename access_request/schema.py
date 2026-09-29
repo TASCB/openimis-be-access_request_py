@@ -1,8 +1,3 @@
-"""GraphQL schema (Query + Mutation) for the Access Request module.
-
-Concatenated into the global openIMIS schema by the assembly (same mechanism as
-``training`` / ``payment_cycle``).
-"""
 import graphene
 import graphene_django_optimizer as gql_optimizer
 from django.contrib.auth.models import AnonymousUser

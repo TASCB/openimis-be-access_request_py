@@ -1,8 +1,13 @@
 """GraphQL object types for the Access Request module."""
 import graphene
+from django.contrib.contenttypes.models import ContentType
 from graphene_django import DjangoObjectType
 
+from approval.gql_queries import ApprovalRequestGQLType
+from approval.models import ApprovalRequest
+
 from core import ExtendedConnection
+from core.models import InteractiveUser
 from access_request.models import AccessProfile, AccessRequest
 
 
@@ -25,6 +30,25 @@ class AccessProfileGQLType(DjangoObjectType):
 
 class AccessRequestGQLType(DjangoObjectType):
     uuid = graphene.String(source='uuid')
+    # Active accounts already using this email, looked up live so reviewers see the
+    # current state. Not exposed publicly: it would tell anyone whether an email has an account.
+    existing_user_logins = graphene.List(graphene.String)
+    # The engine request behind this application. Resolved here, under the access request's own
+    # rights, so a line manager can see the chain without holding the engine's search right.
+    approval = graphene.Field(ApprovalRequestGQLType)
+
+    def resolve_approval(self, info):
+        return ApprovalRequest.objects.filter(
+            content_type=ContentType.objects.get_for_model(AccessRequest),
+            object_id=str(self.id), is_deleted=False,
+        ).order_by('-date_created').first()
+
+    def resolve_existing_user_logins(self, info):
+        if not self.email:
+            return []
+        return list(InteractiveUser.objects.filter(
+            email__iexact=self.email.strip(), validity_to__isnull=True,
+        ).order_by('login_name').values_list('login_name', flat=True))
 
     class Meta:
         model = AccessRequest

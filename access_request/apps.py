@@ -31,11 +31,8 @@ SECTION_USER_GROUPS = [
     'Monitoring, Evaluation and Data',
 ]
 
-# PAA (village-level) sections shown only to PAA staff on the public form. Seeded as both
-# auth.Group sections (selectable in the dropdown) and matching core.Role rows carrying one
-# baseline right — a placeholder to be refined later via the Roles admin.
 PAA_SECTION_GROUPS = ['TMO', 'PSSC', 'PSSNA']
-PAA_ROLE_BASIC_RIGHTS = [101001]  # insuree/family search — most basic openIMIS right
+PAA_ROLE_BASIC_RIGHTS = [101001]
 
 DEFAULT_CONFIG = {
     'gql_request_search_perms': ['230101'],

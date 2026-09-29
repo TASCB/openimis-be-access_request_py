@@ -1,5 +1,6 @@
 """Access request/account provisioning models."""
 import secrets
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -69,6 +70,21 @@ class AccessProfile(HistoryModel):
         return f'{self.name} ({self.code})'
 
 
+class SectionSponsor(models.Model):
+    """Which role signs the MANAGER step for applications from a section.
+
+    Without a row the step falls back to "any holder of the manager-approve right".
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    section_group = models.OneToOneField(
+        'auth.Group', on_delete=models.CASCADE, related_name='access_sponsor')
+    sponsor_role = models.ForeignKey('core.Role', on_delete=models.DO_NOTHING, related_name='+')
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f'{self.section_group} → {self.sponsor_role}'
+
+
 class AccessRequest(HistoryModel):
     """A public account application / activation request."""
     reference_code = models.CharField(
@@ -84,8 +100,6 @@ class AccessRequest(HistoryModel):
     phone = models.CharField(max_length=50, blank=True, null=True)
     applicant_signature = models.TextField(blank=True, null=True)
 
-    # Section = an openIMIS User Group (django auth.Group); the id is the identifier stored,
-    # the name is what the applicant sees. `section` above keeps a denormalised label snapshot.
     section_group = models.ForeignKey(
         'auth.Group', on_delete=models.DO_NOTHING, blank=True, null=True,
         related_name='access_requests')

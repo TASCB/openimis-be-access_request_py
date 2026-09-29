@@ -29,7 +29,8 @@ from core.services import userServices
 
 from access_request.apps import AccessRequestConfig
 from access_request.models import (
-    AccessProfile, AccessRequest, RequestType, RequestStatus, generate_reference_code,
+    AccessProfile, AccessRequest, RequestType, RequestStatus, SectionSponsor,
+    generate_reference_code,
 )
 from access_request.validations import (
     AccessProfileValidation, AccessRequestValidation,
@@ -230,12 +231,19 @@ class AccessRequestService:
                 _("You may not grant roles you do not hold: %(roles)s") % {"roles": forbidden})
 
     def _send_credentials(self, req, username):
+        """Email the set-password link. A failure here leaves an account nobody can log into,
+        so it is recorded on the request instead of only logged."""
         try:
             if AccessRequestConfig.credential_delivery == 'SET_PASSWORD_LINK':
                 # emails a tokenized /set_password link; no plaintext secret is stored
                 userServices.reset_user_password(request=None, username=username)
         except Exception as exc:
-            logger.warning("access_request: credential email failed for %s (%s)", username, exc)
+            logger.error("access_request: credential email failed for %s (%s)", username, exc)
+            try:
+                AccessRequest.objects.filter(id=req.id).update(
+                    provisioning_error=f"Account created but the set-password email failed: {exc}")
+            except Exception:
+                logger.warning("access_request: could not record credential failure", exc_info=True)
 
     def _notify_rejected(self, req):
         # Placeholder — wire an email template ("your request was not approved").
@@ -265,7 +273,14 @@ class AccessRequestService:
             'profile': req.profile.name if req.profile else None,
             'request_type': req.request_type,
         }
-        res = ApprovalService(executor).request_approval(req, 'ACCESS_REQUEST_ACCOUNT', summary=summary)
+        step_roles = {}
+        if req.section_group_id:
+            sponsor = SectionSponsor.objects.filter(
+                section_group_id=req.section_group_id, is_active=True).first()
+            if sponsor:
+                step_roles['MANAGER'] = sponsor.sponsor_role_id
+        res = ApprovalService(executor).request_approval(
+            req, 'ACCESS_REQUEST_ACCOUNT', summary=summary, step_roles=step_roles or None)
         if not res.get('success'):
             logger.warning("access_request: engine request_approval failed (%s) — legacy path", res)
             return False
