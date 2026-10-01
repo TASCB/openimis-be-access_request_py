@@ -44,7 +44,8 @@ DEFAULT_CONFIG = {
     'submit_rate_max': 10,          
     'submit_rate_window': 60,      
     'captcha_enabled': False,      
-    'credential_delivery': 'SET_PASSWORD_LINK',  
+    'credential_delivery': 'TEMPORARY_PASSWORD',  # TEMPORARY_PASSWORD | SET_PASSWORD_LINK | BOTH
+    'temporary_password_ttl_seconds': 900,
     'default_user_language': 'en',
     'seed_profiles': True,
     'seed_sections': True,          # seed the RBAC user groups as auth.Group "sections"
@@ -70,7 +71,8 @@ class AccessRequestConfig(AppConfig):
     submit_rate_max = 10
     submit_rate_window = 60
     captcha_enabled = False
-    credential_delivery = 'SET_PASSWORD_LINK'
+    credential_delivery = 'TEMPORARY_PASSWORD'
+    temporary_password_ttl_seconds = 900
     default_user_language = 'en'
     seed_profiles = True
     seed_sections = True

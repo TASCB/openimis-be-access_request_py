@@ -14,9 +14,12 @@ confirms, and ``_assert_can_grant`` rejects any role the approver does not thems
 hold — the public "profile" is only a suggestion.
 """
 import logging
+import secrets
+import string
 from datetime import datetime
 
 from django.contrib.auth.models import Group
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -24,13 +27,13 @@ from django.utils.translation import gettext as _
 from core.services import BaseService
 from core.services.utils import output_exception, model_representation, check_authentication
 from core.signals import register_service_signal
-from core.models import User, InteractiveUser
+from core.apps import CoreConfig
+from core.models import Role, User, InteractiveUser
 from core.services import userServices
 
 from access_request.apps import AccessRequestConfig
 from access_request.models import (
-    AccessProfile, AccessRequest, RequestType, RequestStatus, SectionSponsor,
-    generate_reference_code,
+    AccessProfile, AccessRequest, RequestType, RequestStatus, generate_reference_code,
 )
 from access_request.validations import (
     AccessProfileValidation, AccessRequestValidation,
@@ -39,6 +42,24 @@ from access_request.validations import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_AUDIT_USER_ID = 1  # used for public (unauthenticated) submissions
+IMIS_ADMINISTRATOR_SYSTEM = 64
+PASSWORD_SYMBOLS = '!@#$%&*?-_'
+
+
+def generate_temporary_password(length=14):
+    rng = secrets.SystemRandom()
+    chars = ([secrets.choice(string.ascii_uppercase) for _ in range(2)]
+             + [secrets.choice(string.ascii_lowercase) for _ in range(2)]
+             + [secrets.choice(string.digits) for _ in range(2)]
+             + [secrets.choice(PASSWORD_SYMBOLS) for _ in range(2)])
+    pool = string.ascii_letters + string.digits + PASSWORD_SYMBOLS
+    chars += [secrets.choice(pool) for _ in range(length - len(chars))]
+    rng.shuffle(chars)
+    return ''.join(chars)
+
+
+def _temporary_password_key(request_id):
+    return f'access_request_temp_pw_{request_id}'
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +191,10 @@ class AccessRequestService:
                 }
                 if district_ids:
                     data['districts'] = list(district_ids)
+                password = None
+                if AccessRequestConfig.credential_delivery in ('TEMPORARY_PASSWORD', 'BOTH'):
+                    password = generate_temporary_password()
+                    data['password'] = password
 
                 audit_id = self._audit_id()
                 # NEW → create; ACTIVATE → resolve existing by username, else create.
@@ -188,8 +213,12 @@ class AccessRequestService:
                 req.status = RequestStatus.PROVISIONED
                 req.save(username=getattr(self.user, 'username', None))
 
-                # Footer note: "Username approved, password shared via email."
-                self._send_credentials(req, username)
+                if password:
+                    cache.set(_temporary_password_key(req.id),
+                              {'password': password, 'issued_to': str(self.user.id)},
+                              AccessRequestConfig.temporary_password_ttl_seconds)
+                if AccessRequestConfig.credential_delivery in ('SET_PASSWORD_LINK', 'BOTH'):
+                    self._send_credentials(req, username)
                 return {"success": True, "username": username,
                         "data": model_representation(req)}
         except Exception as exc:
@@ -214,10 +243,28 @@ class AccessRequestService:
             return parts[0], parts[0]
         return ' '.join(parts[:-1]), parts[-1]
 
+    def take_temporary_password(self, request_id):
+        """Hand the provisioner the temporary password once; it is then gone from the cache."""
+        check_authentication(self.user)
+        if not self.user.has_perms(AccessRequestConfig.gql_ict_approve_perms):
+            raise PermissionError(_("unauthorized"))
+        key = _temporary_password_key(request_id)
+        entry = cache.get(key)
+        if not entry or entry.get('issued_to') != str(self.user.id):
+            return None
+        cache.delete(key)
+        return entry['password']
+
     def _assert_can_grant(self, role_ids):
-        """An approver may only grant roles at/below their own authority: reject any
-        role id the approver does not themselves hold (unless they're a super-admin)."""
+        """Holders of the user-create right may grant any role except IMIS Administrator;
+        others only roles they hold themselves."""
         if getattr(self.user, 'is_imis_admin', False) or getattr(self.user, 'is_superuser', False):
+            return
+        admin_roles = [r.id for r in Role.objects.filter(id__in=role_ids or [], validity_to__isnull=True)
+                       if (r.is_system or 0) & IMIS_ADMINISTRATOR_SYSTEM]
+        if admin_roles:
+            raise PermissionError(_("Only an IMIS Administrator may grant the IMIS Administrator role"))
+        if self.user.has_perms(CoreConfig.gql_mutation_create_users_perms):
             return
         i_user = getattr(self.user, 'i_user', None)
         held = set()
@@ -273,15 +320,63 @@ class AccessRequestService:
             'profile': req.profile.name if req.profile else None,
             'request_type': req.request_type,
         }
-        step_roles = {}
-        if req.section_group_id:
-            sponsor = SectionSponsor.objects.filter(
-                section_group_id=req.section_group_id, is_active=True).first()
-            if sponsor:
-                step_roles['MANAGER'] = sponsor.sponsor_role_id
+        step_groups = {'MANAGER': req.section_group_id} if req.section_group_id else None
         res = ApprovalService(executor).request_approval(
-            req, 'ACCESS_REQUEST_ACCOUNT', summary=summary, step_roles=step_roles or None)
+            req, 'ACCESS_REQUEST_ACCOUNT', summary=summary, step_groups=step_groups)
         if not res.get('success'):
             logger.warning("access_request: engine request_approval failed (%s) — legacy path", res)
             return False
         return True
+
+
+class SectionManagerService:
+    """Section managers are members of a section's user group who hold the manager-approve right."""
+
+    def __init__(self, user):
+        self.user = user
+
+    def _authorize(self):
+        check_authentication(self.user)
+        if not self.user.has_perms(AccessRequestConfig.gql_profile_manage_perms):
+            raise PermissionError(_("unauthorized"))
+
+    @staticmethod
+    def sections():
+        approve_right = [str(r) for r in AccessRequestConfig.gql_manager_approve_perms]
+        out = []
+        for group in Group.objects.order_by('name').prefetch_related('user_set'):
+            members = [u for u in group.user_set.all() if u.validity_to is None]
+            out.append({
+                'section_id': group.id,
+                'section_name': group.name,
+                'managers': [{
+                    'user_id': str(u.id),
+                    'username': u.username,
+                    'other_names': getattr(u.i_user, 'other_names', None),
+                    'last_name': getattr(u.i_user, 'last_name', None),
+                    'can_approve': u.has_perms(approve_right),
+                } for u in members],
+            })
+        return out
+
+    def add(self, section_id, user_id):
+        return self._change(section_id, user_id, add=True)
+
+    def remove(self, section_id, user_id):
+        return self._change(section_id, user_id, add=False)
+
+    def _change(self, section_id, user_id, add):
+        try:
+            self._authorize()
+            group = Group.objects.filter(id=section_id).first()
+            user = User.objects.filter(id=user_id, validity_to__isnull=True).first()
+            if not group or not user:
+                return {"success": False, "message": _("Section or user not found")}
+            if add:
+                user.groups.add(group)
+            else:
+                user.groups.remove(group)
+            return {"success": True, "message": "Ok"}
+        except Exception as exc:
+            return output_exception(model_name='SectionManager', method='add' if add else 'remove',
+                                    exception=exc)

@@ -23,7 +23,9 @@ from access_request.apps import AccessRequestConfig
 from access_request.models import (
     AccessProfile, AccessProfileMutation, RequestType,
 )
-from access_request.services import AccessProfileService, AccessRequestService
+from access_request.services import (
+    AccessProfileService, AccessRequestService, SectionManagerService,
+)
 
 
 def _strip_client(data):
@@ -155,3 +157,41 @@ class ProvisionAccessRequestMutation(BaseMutation):
         username = graphene.String(required=True)
         role_ids = graphene.List(graphene.Int, required=True)
         district_ids = graphene.List(graphene.Int, required=False)
+
+
+class AddAccessSectionManagerMutation(BaseMutation):
+    _mutation_module = "access_request"
+    _mutation_class = "AddAccessSectionManagerMutation"
+
+    @classmethod
+    def _validate_mutation(cls, user, **data):
+        if not user.has_perms(AccessRequestConfig.gql_profile_manage_perms):
+            raise PermissionDenied(_("unauthorized"))
+
+    @classmethod
+    def _mutate(cls, user, **data):
+        res = SectionManagerService(user).add(data.get('section_id'), data.get('user_id'))
+        return res if not res['success'] else None
+
+    class Input(OpenIMISMutation.Input):
+        section_id = graphene.Int(required=True)
+        user_id = graphene.UUID(required=True)
+
+
+class RemoveAccessSectionManagerMutation(BaseMutation):
+    _mutation_module = "access_request"
+    _mutation_class = "RemoveAccessSectionManagerMutation"
+
+    @classmethod
+    def _validate_mutation(cls, user, **data):
+        if not user.has_perms(AccessRequestConfig.gql_profile_manage_perms):
+            raise PermissionDenied(_("unauthorized"))
+
+    @classmethod
+    def _mutate(cls, user, **data):
+        res = SectionManagerService(user).remove(data.get('section_id'), data.get('user_id'))
+        return res if not res['success'] else None
+
+    class Input(OpenIMISMutation.Input):
+        section_id = graphene.Int(required=True)
+        user_id = graphene.UUID(required=True)

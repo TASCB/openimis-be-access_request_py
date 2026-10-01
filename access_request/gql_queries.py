@@ -73,3 +73,17 @@ class AccessRequestGQLType(DjangoObjectType):
             "version": ["exact"],
         }
         connection_class = ExtendedConnection
+
+
+class SectionManagerGQLType(graphene.ObjectType):
+    user_id = graphene.String()
+    username = graphene.String()
+    other_names = graphene.String()
+    last_name = graphene.String()
+    can_approve = graphene.Boolean()
+
+
+class AccessSectionGQLType(graphene.ObjectType):
+    section_id = graphene.Int()
+    section_name = graphene.String()
+    managers = graphene.List(SectionManagerGQLType)
