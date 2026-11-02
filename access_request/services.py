@@ -73,11 +73,20 @@ class AccessProfileService(BaseService):
 
     @register_service_signal('access_profile_service.create')
     def create(self, obj_data):
-        return super().create(obj_data)
+        return self._keep_inactive(super().create(obj_data), obj_data)
 
     @register_service_signal('access_profile_service.update')
     def update(self, obj_data):
-        return super().update(obj_data)
+        return self._keep_inactive(super().update(obj_data), obj_data)
+
+    @staticmethod
+    def _keep_inactive(result, obj_data):
+        # core pre_save resets a False boolean to its default (True); write it directly.
+        if result.get('success') and obj_data.get('is_active') is False:
+            profile_id = result.get('data', {}).get('id') or obj_data.get('id')
+            AccessProfile.objects.filter(id=profile_id).update(is_active=False)
+            AccessProfile.objects.get(id=profile_id).update_cache()
+        return result
 
     @register_service_signal('access_profile_service.delete')
     def delete(self, obj_data):
