@@ -13,6 +13,11 @@ from access_request.models import AccessProfile, AccessRequest
 
 class AccessProfileGQLType(DjangoObjectType):
     uuid = graphene.String(source='uuid')
+    section_group_id = graphene.Int()
+    section_name = graphene.String()
+
+    def resolve_section_name(self, info):
+        return self.section_group.name if self.section_group_id else None
 
     class Meta:
         model = AccessProfile
@@ -24,7 +29,9 @@ class AccessProfileGQLType(DjangoObjectType):
             "is_active": ["exact"],
             "is_deleted": ["exact"],
             "version": ["exact"],
+            "section_group__name": ["exact"],
         }
+        exclude = ('section_group',)
         connection_class = ExtendedConnection
 
 

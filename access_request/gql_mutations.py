@@ -50,6 +50,7 @@ class CreateAccessProfileInput(OpenIMISMutation.Input):
     description = graphene.String(required=False)
     suggested_role_ids = graphene.List(graphene.Int, required=False)
     default_location_id = graphene.Int(required=False)
+    section_group_id = graphene.Int(required=False)
     is_active = graphene.Boolean(required=False)
 
 

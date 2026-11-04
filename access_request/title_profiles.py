@@ -2,6 +2,12 @@
 
 COUNTRYWIDE = 'Country-wide access (HQ)'
 
+
+def section_name(group_code):
+    """UG01..UG08 → the section (auth.Group) name, in SECTION_USER_GROUPS order."""
+    from access_request.apps import SECTION_USER_GROUPS
+    return SECTION_USER_GROUPS[int(group_code[2:]) - 1]
+
 # (code, title, user group, role names)
 TITLE_PROFILES = [
     ('ED', 'Executive Director', 'UG01', ['Payment Approver', 'Executive Viewer', COUNTRYWIDE]),

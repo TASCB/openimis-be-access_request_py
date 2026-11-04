@@ -92,7 +92,8 @@ class AccessProfileListView(views.APIView):
             return Response({'error': 'disabled'}, status=403)
         profiles = AccessProfile.objects.filter(is_active=True, is_deleted=False).order_by('name')
         return Response({'profiles': [
-            {'uuid': str(p.id), 'code': p.code, 'name': p.name, 'description': p.description}
+            {'uuid': str(p.id), 'code': p.code, 'name': p.name, 'description': p.description,
+             'section_group_id': p.section_group_id}
             for p in profiles
         ]})
 
@@ -203,6 +204,15 @@ class AccessRequestSubmitView(views.APIView):
             phone = normalize_phone(phone)
             if not phone:
                 invalid['phone'] = 'invalid'
+        profile_id = data.get('profile_id') or None
+        if profile_id and 'profile_id' not in invalid:
+            try:
+                profile = AccessProfile.objects.filter(id=profile_id, is_active=True, is_deleted=False).first()
+            except (ValueError, ValidationError):
+                profile = None
+            if not profile or (profile.section_group_id
+                               and str(profile.section_group_id) != str(data.get('section_group_id'))):
+                invalid['profile_id'] = 'invalid'
         if invalid:
             return Response({'error': 'invalid_fields', 'fields': invalid}, status=400)
 
@@ -231,7 +241,7 @@ class AccessRequestSubmitView(views.APIView):
             # Coerce empty strings to None: the form posts '' for these id fields when the
             # category hides them (TASAF_STAFF / OTHER send no location), and '' breaks the
             # integer/uuid FK columns on save.
-            'profile_id': data.get('profile_id') or None,
+            'profile_id': profile_id,
             'requested_location_id': data.get('requested_location_id') or None,
         }
         res = AccessRequestService().submit(payload)

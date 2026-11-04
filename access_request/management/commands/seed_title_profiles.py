@@ -3,7 +3,7 @@ from django.db import transaction
 
 from access_request.apps import DEFAULT_PROFILES
 from access_request.models import AccessProfile
-from access_request.title_profiles import TITLE_PROFILES
+from access_request.title_profiles import TITLE_PROFILES, section_name
 
 
 class Command(BaseCommand):
@@ -16,12 +16,14 @@ class Command(BaseCommand):
         parser.add_argument('--dry-run', action='store_true', dest='dry_run')
 
     def handle(self, *args, **opts):
+        from django.contrib.auth.models import Group
         from core.models import Role, User
 
         user = User.objects.filter(username=opts['user']).first()
         if not user:
             raise CommandError(f"Unknown user {opts['user']!r}")
         role_ids = dict(Role.objects.filter(validity_to__isnull=True).values_list('name', 'id'))
+        group_ids = dict(Group.objects.values_list('name', 'id'))
         tag = '[dry-run] ' if opts['dry_run'] else ''  # dry run writes nothing: saves also update the cache
         counts = {'created': 0, 'updated': 0, 'kept': 0, 'retired': 0}
         missing_roles = set()
@@ -32,19 +34,23 @@ class Command(BaseCommand):
                 ids = [role_ids[r] for r in roles if r in role_ids]
                 missing_roles.update(r for r in roles if r not in role_ids)
                 description = f'{group}: {", ".join(roles)}'
+                section_id = group_ids.get(section_name(group))
                 profile = AccessProfile.objects.filter(code=code, is_deleted=False).first()
                 if not profile:
                     counts['created'] += 1
                     self.stdout.write(f'{tag}CREATE {code} {title} -> {roles}')
                     if not dry:
                         AccessProfile(code=code, name=title, description=description,
-                                      suggested_role_ids=ids, is_active=True).save(user=user)
-                elif opts['update'] and (profile.suggested_role_ids != ids or profile.name != title):
+                                      suggested_role_ids=ids, section_group_id=section_id,
+                                      is_active=True).save(user=user)
+                elif opts['update'] and (profile.suggested_role_ids != ids or profile.name != title
+                                         or profile.section_group_id != section_id):
                     counts['updated'] += 1
                     self.stdout.write(f'{tag}UPDATE {code} {title} -> {roles}')
                     if not dry:
                         profile.update(user=user, data={'name': title, 'description': description,
-                                                        'suggested_role_ids': ids})
+                                                        'suggested_role_ids': ids,
+                                                        'section_group_id': section_id})
                 else:
                     counts['kept'] += 1
 

@@ -73,11 +73,18 @@ class AccessProfileService(BaseService):
 
     @register_service_signal('access_profile_service.create')
     def create(self, obj_data):
-        return self._keep_inactive(super().create(obj_data), obj_data)
+        return self._keep_inactive(super().create(self._any_section(obj_data)), obj_data)
 
     @register_service_signal('access_profile_service.update')
     def update(self, obj_data):
-        return self._keep_inactive(super().update(obj_data), obj_data)
+        return self._keep_inactive(super().update(self._any_section(obj_data)), obj_data)
+
+    @staticmethod
+    def _any_section(obj_data):
+        # The UI sends 0 for "every section": this graphene version has no null literal.
+        if obj_data.get('section_group_id') == 0:
+            obj_data['section_group_id'] = None
+        return obj_data
 
     @staticmethod
     def _keep_inactive(result, obj_data):

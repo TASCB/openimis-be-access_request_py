@@ -55,6 +55,9 @@ class AccessProfile(HistoryModel):
     description = models.TextField(blank=True, null=True)
     # Suggested core.Role ids are confirmed or overridden during approval.
     suggested_role_ids = models.JSONField(default=list, blank=True)
+    # The form lists the title only under this section; empty = every section.
+    section_group = models.ForeignKey(
+        'auth.Group', on_delete=models.SET_NULL, blank=True, null=True, related_name='access_profiles')
     default_location = models.ForeignKey(
         Location, on_delete=models.DO_NOTHING, blank=True, null=True,
         related_name='access_profiles')
