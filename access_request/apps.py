@@ -20,16 +20,26 @@ DEFAULT_PROFILES = [
     ('READ_ONLY_VIEWER', 'Read-only Viewer', 'View dashboards and reports without edit access'),
 ]
 
+# Organogram directorates, so the manager step goes to the applicant's reporting line.
 SECTION_USER_GROUPS = [
-    'Executive Office and Corporate Governance',
-    'Internal Audit and Assurance',
-    'Finance, Disbursement and E Payment',
-    'Administration, Human Resources, Registry and Logistics',
-    'ICT, Systems and Digital Delivery',
-    'Programs, Productive Cash Transfer and Economic Inclusion',
-    'Climate Smart Public Works, Targeted Infrastructure, Safeguards and GRM',
-    'Monitoring, Evaluation and Data',
+    "Executive Director's Office",
+    'Directorate of Internal Audit',
+    'Directorate of Finance and Administration',
+    'Directorate of IT and Delivery Systems',
+    'Directorate of Programs',
 ]
+
+# Former UG-based sections → directorate (merge_sections_to_directorates).
+LEGACY_SECTIONS = {
+    'Executive Office and Corporate Governance': "Executive Director's Office",
+    'Internal Audit and Assurance': 'Directorate of Internal Audit',
+    'Finance, Disbursement and E Payment': 'Directorate of Finance and Administration',
+    'Administration, Human Resources, Registry and Logistics': 'Directorate of Finance and Administration',
+    'ICT, Systems and Digital Delivery': 'Directorate of IT and Delivery Systems',
+    'Monitoring, Evaluation and Data': 'Directorate of IT and Delivery Systems',
+    'Programs, Productive Cash Transfer and Economic Inclusion': 'Directorate of Programs',
+    'Climate Smart Public Works, Targeted Infrastructure, Safeguards and GRM': 'Directorate of Programs',
+}
 
 PAA_SECTION_GROUPS = ['TMO', 'PSSC', 'PSSNA']
 PAA_ROLE_BASIC_RIGHTS = [101001]
@@ -48,7 +58,7 @@ DEFAULT_CONFIG = {
     'temporary_password_ttl_seconds': 900,
     'default_user_language': 'en',
     'seed_profiles': True,
-    'seed_sections': True,          # seed the RBAC user groups as auth.Group "sections"
+    'seed_sections': True,          # seed the directorates as auth.Group "sections"
 }
 
 ALL_RIGHTS = [
@@ -122,8 +132,8 @@ def _seed_admin_rights(apps):
 
 
 def _seed_sections(apps):
-    """Idempotently ensure the RBAC user groups exist as django auth.Group rows (the public
-    form's Section dropdown loads from these)."""
+    """Idempotently ensure the directorates exist as django auth.Group rows (the public form's
+    Section dropdown loads from these)."""
     Group = apps.get_model('auth', 'Group')
     for name in SECTION_USER_GROUPS + PAA_SECTION_GROUPS:
         Group.objects.get_or_create(name=name)

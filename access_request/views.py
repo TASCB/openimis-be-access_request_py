@@ -103,7 +103,7 @@ class SectionListView(views.APIView):
 
     Only the id (stored) + name (shown) are exposed — no membership or other detail. This is the
     same ``auth.Group`` set openIMIS uses for ``auto_provisioning_user_group``; seeded from the
-    TASAF RBAC user groups (UG01–UG08)."""
+    organogram directorates (``SECTION_USER_GROUPS``)."""
     authentication_classes = []
     permission_classes = [AllowAny]
 
