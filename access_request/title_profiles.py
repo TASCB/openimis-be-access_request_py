@@ -38,6 +38,9 @@ TITLE_PROFILES = [
     ('SASO', 'Senior Application Support Officer', 'DIDS', ['System Administrator', COUNTRYWIDE]),
     ('ASO', 'Application Support Officer', 'DIDS', ['System Administrator', COUNTRYWIDE]),
     ('DA&AO', 'Data Analyst and Admin Officer', 'DIDS', ['M&E Officer', COUNTRYWIDE]),
+    # Temporary until developer access is decided.
+    ('SSDO', 'Senior System Development Officer', 'DIDS', ['IMIS Administrator', COUNTRYWIDE]),
+    ('SDO', 'System Development Officer', 'DIDS', ['IMIS Administrator', COUNTRYWIDE]),
     ('DP', 'Director of Programs', 'DP', ['Director of Programs', 'Programs Viewer', COUNTRYWIDE]),
     ('PCT-M', 'Productive Cash Transfer Manager', 'DP', ['PCT Manager', COUNTRYWIDE]),
     ('EIM', 'Economic Inclusion Manager', 'DP', ['PCT Manager', COUNTRYWIDE]),
