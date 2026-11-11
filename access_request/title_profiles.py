@@ -46,7 +46,7 @@ TITLE_PROFILES = [
     ('EIM', 'Economic Inclusion Manager', 'DP', ['PCT Manager', COUNTRYWIDE]),
     ('PCT-O', 'Productive Cash Transfer Officer', 'DP', ['PCT Officer', 'Data Import Officer', COUNTRYWIDE]),
     ('EI-O', 'Economic Inclusion Officer', 'DP', ['PCT Officer', COUNTRYWIDE]),
-    ('SM', 'Safeguard Manager', 'DP', ['Grievance Officer', COUNTRYWIDE]),
+    ('SM', 'Safeguard Manager', 'DP', ['Grievance Manager', COUNTRYWIDE]),
     ('GRO', 'Grievance Redressal Officer', 'DP', ['Grievance Officer', COUNTRYWIDE]),
     ('GRA', 'Assistant Grievance Redressal', 'DP', ['GRM Intake', COUNTRYWIDE]),
     ('POCD', 'PO - Community Development', 'DP', ['Council Coordinator', COUNTRYWIDE]),
