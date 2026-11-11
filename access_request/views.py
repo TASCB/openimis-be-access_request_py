@@ -9,6 +9,7 @@ an inert ``AccessRequest``; nothing is granted until two staff approve.
 Endpoints:
   GET  /api/access_request/profiles/            → active curated profiles (for the form)
   GET  /api/access_request/sections/            → active User Groups (auth.Group) for the Section dropdown
+  GET  /api/access_request/units/               → active units of the directorates, for the Unit dropdown
   GET  /api/access_request/locations/?parent=   → children of a location (roots when absent) for cascading pickers
   POST /api/access_request/submit/              → create a request
   GET  /api/access_request/status/<ref_code>/   → coarse status by reference code
@@ -28,7 +29,7 @@ from location.models import Location
 
 from access_request.apps import AccessRequestConfig
 from access_request.models import (
-    AccessProfile, AccessRequest, RequestType, UserCategory, AdministrativeLevel,
+    AccessProfile, AccessRequest, AccessUnit, RequestType, UserCategory, AdministrativeLevel,
     TERMINAL_STATUSES,
 )
 from access_request.services import AccessRequestService
@@ -93,7 +94,7 @@ class AccessProfileListView(views.APIView):
         profiles = AccessProfile.objects.filter(is_active=True, is_deleted=False).order_by('name')
         return Response({'profiles': [
             {'uuid': str(p.id), 'code': p.code, 'name': p.name, 'description': p.description,
-             'section_group_id': p.section_group_id}
+             'section_group_id': p.section_group_id, 'unit_id': str(p.unit_id) if p.unit_id else None}
             for p in profiles
         ]})
 
@@ -110,8 +111,21 @@ class SectionListView(views.APIView):
     def get(self, request):
         if not AccessRequestConfig.public_submit_enabled:
             return Response({'error': 'disabled'}, status=403)
-        groups = Group.objects.order_by('name')
+        groups = Group.objects.filter(access_unit__isnull=True).order_by('name')
         return Response({'sections': [{'id': g.id, 'name': g.name} for g in groups]})
+
+
+class UnitListView(views.APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        if not AccessRequestConfig.public_submit_enabled:
+            return Response({'error': 'disabled'}, status=403)
+        return Response({'units': [
+            {'id': str(u.id), 'code': u.code, 'name': u.name, 'section_group_id': u.section_group_id}
+            for u in AccessUnit.objects.filter(is_active=True)
+        ]})
 
 
 class LocationListView(views.APIView):
@@ -175,6 +189,11 @@ class AccessRequestSubmitView(views.APIView):
 
         if not (data.get('section_group_id') or data.get('section')):
             missing.append('section')
+        section_units = AccessUnit.objects.filter(
+            is_active=True, section_group_id=data.get('section_group_id') or None) \
+            if str(data.get('section_group_id') or '').isdigit() else AccessUnit.objects.none()
+        if category == UserCategory.TASAF_STAFF and section_units.exists() and not data.get('unit_id'):
+            missing.append('unit')
         if category == UserCategory.PAA_STAFF:
             if not admin_level:
                 missing.append('administrative_level')
@@ -204,6 +223,14 @@ class AccessRequestSubmitView(views.APIView):
             phone = normalize_phone(phone)
             if not phone:
                 invalid['phone'] = 'invalid'
+        unit_id = data.get('unit_id') or None
+        if unit_id:
+            try:
+                unit_ok = section_units.filter(id=unit_id).exists()
+            except (ValueError, ValidationError):
+                unit_ok = False
+            if not unit_ok:
+                invalid['unit_id'] = 'invalid'
         profile_id = data.get('profile_id') or None
         if profile_id and 'profile_id' not in invalid:
             try:
@@ -211,7 +238,8 @@ class AccessRequestSubmitView(views.APIView):
             except (ValueError, ValidationError):
                 profile = None
             if not profile or (profile.section_group_id
-                               and str(profile.section_group_id) != str(data.get('section_group_id'))):
+                               and str(profile.section_group_id) != str(data.get('section_group_id'))) \
+                    or (profile.unit_id and unit_id and str(profile.unit_id) != str(unit_id)):
                 invalid['profile_id'] = 'invalid'
         if invalid:
             return Response({'error': 'invalid_fields', 'fields': invalid}, status=400)
@@ -232,6 +260,7 @@ class AccessRequestSubmitView(views.APIView):
             'organization_paa': data.get('organization_paa'),
             'section': data.get('section'),
             'section_group_id': data.get('section_group_id'),
+            'unit_id': unit_id if category == UserCategory.TASAF_STAFF else None,
             'designation': data.get('designation'),
             'email': email,
             'phone': phone or None,

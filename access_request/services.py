@@ -33,7 +33,7 @@ from core.services import userServices
 
 from access_request.apps import AccessRequestConfig
 from access_request.models import (
-    AccessProfile, AccessRequest, RequestType, RequestStatus, generate_reference_code,
+    AccessProfile, AccessRequest, AccessUnit, RequestType, RequestStatus, generate_reference_code,
 )
 from access_request.validations import (
     AccessProfileValidation, AccessRequestValidation,
@@ -103,6 +103,15 @@ class AccessProfileService(BaseService):
 # ---------------------------------------------------------------------------
 # Access request workflow
 # ---------------------------------------------------------------------------
+def approver_group_id(unit, profile, section_group_id):
+    if not unit:
+        return section_group_id
+    if profile and unit.head_profile_id == profile.id:
+        parent = unit.reports_to
+        return parent.group_id if parent and parent.is_active else section_group_id
+    return unit.group_id
+
+
 class AccessRequestService:
     """Standalone workflow service (not BaseService CRUD — the public submit path has
     no authenticated user, and the approval transitions are bespoke)."""
@@ -134,6 +143,10 @@ class AccessRequestService:
                         section_label = grp.name
                     else:
                         section_group_id = None
+                unit = None
+                if payload.get('unit_id'):
+                    unit = AccessUnit.objects.filter(
+                        id=payload['unit_id'], is_active=True, section_group_id=section_group_id).first()
 
                 req = AccessRequest(
                     reference_code=generate_reference_code(),
@@ -142,6 +155,9 @@ class AccessRequestService:
                     organization_paa=payload.get('organization_paa'),
                     section=section_label,
                     section_group_id=section_group_id,
+                    unit=unit,
+                    unit_name=unit.name if unit else None,
+                    approver_group_id=approver_group_id(unit, profile, section_group_id),
                     designation=payload.get('designation'),
                     email=(payload.get('email') or '').strip(),
                     phone=(payload.get('phone') or '').strip(),
@@ -224,6 +240,7 @@ class AccessRequestService:
                 user, _c = userServices.create_or_update_core_user(
                     user_uuid=existing_user_id, username=username, i_user=i_user)
 
+                self._join_headed_units(req, user)
                 req.created_user = user
                 req.assigned_username = username
                 req.status = RequestStatus.PROVISIONED
@@ -247,6 +264,12 @@ class AccessRequestService:
             return output_exception(model_name='AccessRequest', method='provision', exception=exc)
 
     # -- helpers -----------------------------------------------------------
+    @staticmethod
+    def _join_headed_units(req, user):
+        if req.profile_id:
+            for unit in AccessUnit.objects.filter(head_profile_id=req.profile_id, is_active=True):
+                user.groups.add(unit.group_id)
+
     def _audit_id(self):
         return getattr(self.user, 'id_for_audit', None) or getattr(self.user, 'id', None) or SYSTEM_AUDIT_USER_ID
 
@@ -334,9 +357,11 @@ class AccessRequestService:
             'reference_code': req.reference_code, 'full_name': req.full_name, 'email': req.email,
             'designation': req.designation, 'organization_paa': req.organization_paa,
             'profile': req.profile.name if req.profile else None,
+            'unit': req.unit_name,
             'request_type': req.request_type,
         }
-        step_groups = {'MANAGER': req.section_group_id} if req.section_group_id else None
+        group_id = req.approver_group_id or req.section_group_id
+        step_groups = {'MANAGER': group_id} if group_id else None
         res = ApprovalService(executor).request_approval(
             req, 'ACCESS_REQUEST_ACCOUNT', summary=summary, step_groups=step_groups)
         if not res.get('success'):
@@ -359,12 +384,16 @@ class SectionManagerService:
     @staticmethod
     def sections():
         approve_right = [str(r) for r in AccessRequestConfig.gql_manager_approve_perms]
+        units = {u.group_id: u for u in AccessUnit.objects.select_related('section_group')}
         out = []
         for group in Group.objects.order_by('name').prefetch_related('user_set'):
             members = [u for u in group.user_set.all() if u.validity_to is None]
+            unit = units.get(group.id)
             out.append({
                 'section_id': group.id,
                 'section_name': group.name,
+                'unit_of': unit.section_group.name if unit else None,
+                'sort_key': (unit.section_group.name, 1, unit.sort_order) if unit else (group.name, 0, 0),
                 'managers': [{
                     'user_id': str(u.id),
                     'username': u.username,
@@ -373,7 +402,7 @@ class SectionManagerService:
                     'can_approve': u.has_perms(approve_right),
                 } for u in members],
             })
-        return out
+        return sorted(out, key=lambda row: row.pop('sort_key'))
 
     def add(self, section_id, user_id):
         return self._change(section_id, user_id, add=True)

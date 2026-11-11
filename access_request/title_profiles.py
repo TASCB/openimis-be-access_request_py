@@ -59,3 +59,27 @@ TITLE_PROFILES = [
     ('MELO', 'Monitoring and Evaluation Officer', 'DIDS', ['M&E Officer', COUNTRYWIDE]),
     ('TMO', 'TASAF Monitoring Officer', 'DIDS', ['TMO']),
 ]
+
+# (code, unit name, directorate, head title, reports-to unit, titles)
+UNITS = [
+    ('ED-OFF', 'Office of the Executive Director', 'EDO', 'ED', None, ['ED']),
+    ('CL', 'Coordination and Logistics', 'EDO', 'CLM', 'ED-OFF', ['CLM', 'CLO']),
+    ('DIA-OFF', 'Office of the Director of Internal Audit', 'DIA', 'DIA', 'ED-OFF', ['DIA']),
+    ('IA', 'Internal Audit', 'DIA', 'IAM', 'DIA-OFF', ['IAM', 'IA']),
+    ('DFA-OFF', 'Office of the Director of Finance and Administration', 'DFA', 'DFA', 'ED-OFF', ['DFA']),
+    ('ACC', 'Accounts', 'DFA', 'AM', 'DFA-OFF', ['AM', 'AFA']),
+    ('DISB', 'Disbursement and E-Payment', 'DFA', 'DM', 'DFA-OFF', ['DM', 'EPC', 'AD', 'EPO']),
+    ('HR', 'Human Resources and Administration', 'DFA', 'HRM', 'DFA-OFF', ['HRM']),
+    ('DIDS-OFF', 'Office of the Director of IT and Delivery Systems', 'DIDS', 'DIDS', 'ED-OFF', ['DIDS']),
+    ('COMM', 'Communication', 'DIDS', 'CM', 'DIDS-OFF', ['CM', 'CO']),
+    ('IT', 'Information Technology', 'DIDS', 'IT-M', 'DIDS-OFF',
+     ['IT-M', 'ISAO', 'NA', 'SASO', 'ASO', 'DA&AO', 'SSDO', 'SDO']),
+    ('MEL', 'Monitoring, Evaluation and Learning', 'DIDS', 'MEL-M', 'DIDS-OFF', ['MEL-M', 'MELO', 'TMO']),
+    ('DP-OFF', 'Office of the Director of Programs', 'DP', 'DP', 'ED-OFF', ['DP']),
+    ('PCT', 'Productive Cash Transfer', 'DP', 'PCT-M', 'DP-OFF', ['PCT-M', 'PCT-O']),
+    ('EI', 'Economic Inclusion', 'DP', 'EIM', 'DP-OFF', ['EIM', 'EI-O']),
+    ('CSPW', 'Climate Smart Public Works', 'DP', 'CSPW-M', 'DP-OFF', ['CSPW-M', 'CSPW-O', 'TI-O']),
+    ('SG', 'Safeguards and Grievance Redress', 'DP', 'SM', 'DP-OFF', ['SM', 'GRO', 'GRA', 'POCD', 'POCGC', 'POE']),
+]
+
+UNIT_HEAD_ROLE = 'Access Request Sponsor'

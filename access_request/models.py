@@ -58,6 +58,8 @@ class AccessProfile(HistoryModel):
     # The form lists the title only under this section; empty = every section.
     section_group = models.ForeignKey(
         'auth.Group', on_delete=models.SET_NULL, blank=True, null=True, related_name='access_profiles')
+    unit = models.ForeignKey(
+        'AccessUnit', on_delete=models.SET_NULL, blank=True, null=True, related_name='profiles')
     default_location = models.ForeignKey(
         Location, on_delete=models.DO_NOTHING, blank=True, null=True,
         related_name='access_profiles')
@@ -68,6 +70,26 @@ class AccessProfile(HistoryModel):
             models.Index(fields=['code']),
             models.Index(fields=['is_active']),
         ]
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
+
+
+class AccessUnit(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=255)
+    section_group = models.ForeignKey('auth.Group', on_delete=models.CASCADE, related_name='access_units')
+    group = models.OneToOneField('auth.Group', on_delete=models.PROTECT, related_name='access_unit')
+    head_profile = models.ForeignKey(
+        'AccessProfile', on_delete=models.SET_NULL, blank=True, null=True, related_name='headed_units')
+    reports_to = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, blank=True, null=True, related_name='child_units')
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ('sort_order', 'name')
 
     def __str__(self):
         return f'{self.name} ({self.code})'
@@ -106,6 +128,11 @@ class AccessRequest(HistoryModel):
     section_group = models.ForeignKey(
         'auth.Group', on_delete=models.DO_NOTHING, blank=True, null=True,
         related_name='access_requests')
+    unit = models.ForeignKey(
+        AccessUnit, on_delete=models.DO_NOTHING, blank=True, null=True, related_name='requests')
+    unit_name = models.CharField(max_length=255, blank=True, null=True)
+    approver_group = models.ForeignKey(
+        'auth.Group', on_delete=models.DO_NOTHING, blank=True, null=True, related_name='+')
 
     user_category = models.CharField(
         max_length=20, choices=UserCategory.choices, blank=True, null=True)

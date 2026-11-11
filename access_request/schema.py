@@ -56,7 +56,9 @@ class Query(graphene.ObjectType):
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
         user = info.context.user
         if not _sees_all_sections(user):
-            filters.append(Q(section_group_id__in=user.groups.values_list('id', flat=True)))
+            my_groups = user.groups.values_list('id', flat=True)
+            filters.append(Q(approver_group_id__in=my_groups)
+                           | Q(approver_group__isnull=True, section_group_id__in=my_groups))
         return gql_optimizer.query(AccessRequest.objects.filter(*filters).distinct(), info)
 
     def resolve_access_request_temporary_password(self, info, id):

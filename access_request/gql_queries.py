@@ -1,5 +1,6 @@
 """GraphQL object types for the Access Request module."""
 import graphene
+from django.contrib.auth.models import Group
 from django.contrib.contenttypes.models import ContentType
 from graphene_django import DjangoObjectType
 
@@ -15,9 +16,17 @@ class AccessProfileGQLType(DjangoObjectType):
     uuid = graphene.String(source='uuid')
     section_group_id = graphene.Int()
     section_name = graphene.String()
+    unit_id = graphene.String()
+    unit_name = graphene.String()
 
     def resolve_section_name(self, info):
         return self.section_group.name if self.section_group_id else None
+
+    def resolve_unit_id(self, info):
+        return str(self.unit_id) if self.unit_id else None
+
+    def resolve_unit_name(self, info):
+        return self.unit.name if self.unit_id else None
 
     class Meta:
         model = AccessProfile
@@ -31,7 +40,7 @@ class AccessProfileGQLType(DjangoObjectType):
             "version": ["exact"],
             "section_group__name": ["exact"],
         }
-        exclude = ('section_group',)
+        exclude = ('section_group', 'unit')
         connection_class = ExtendedConnection
 
 
@@ -43,6 +52,11 @@ class AccessRequestGQLType(DjangoObjectType):
     # The engine request behind this application. Resolved here, under the access request's own
     # rights, so a line manager can see the chain without holding the engine's search right.
     approval = graphene.Field(ApprovalRequestGQLType)
+    approver_group_name = graphene.String()
+
+    def resolve_approver_group_name(self, info):
+        group_id = self.approver_group_id or self.section_group_id
+        return Group.objects.filter(id=group_id).values_list('name', flat=True).first() if group_id else None
 
     def resolve_approval(self, info):
         return ApprovalRequest.objects.filter(
@@ -68,6 +82,7 @@ class AccessRequestGQLType(DjangoObjectType):
             "organization_paa": ["exact", "icontains"],
             "section": ["exact", "icontains"],
             "section_group_id": ["exact"],
+            "unit_name": ["exact", "icontains"],
             "designation": ["exact", "icontains"],
             "email": ["exact", "icontains"],
             "user_category": ["exact", "in"],
@@ -79,6 +94,7 @@ class AccessRequestGQLType(DjangoObjectType):
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "version": ["exact"],
         }
+        exclude = ('unit', 'approver_group')
         connection_class = ExtendedConnection
 
 
@@ -93,4 +109,5 @@ class SectionManagerGQLType(graphene.ObjectType):
 class AccessSectionGQLType(graphene.ObjectType):
     section_id = graphene.Int()
     section_name = graphene.String()
+    unit_of = graphene.String()
     managers = graphene.List(SectionManagerGQLType)
