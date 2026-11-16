@@ -92,6 +92,9 @@ class AccessRequestConfig(AppConfig):
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CONFIG)
         self.__load_config(cfg)
         post_migrate.connect(on_post_migrate, sender=self)
+        # every accepted token now records its browser session, and an ended session is refused
+        from access_request.auth_sessions import install
+        install()
 
     @classmethod
     def __load_config(cls, cfg):

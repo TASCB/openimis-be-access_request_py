@@ -177,3 +177,31 @@ class AccessProfileMutation(UUIDModel, ObjectMutation):
 class AccessRequestMutation(UUIDModel, ObjectMutation):
     access_request = models.ForeignKey(AccessRequest, models.DO_NOTHING, related_name='mutations')
     mutation = models.ForeignKey(MutationLog, models.DO_NOTHING, related_name='access_requests')
+
+
+class AuthSession(models.Model):
+    """One signed-in browser: a sign-in and the token refreshes that follow it.
+
+    openIMIS tokens are stateless JWTs. A refresh keeps the sign-in's `origIat`, so a user and that
+    timestamp name one session for its whole life. A row is recorded the first time a token is seen
+    (see `auth_sessions`), and an ended row makes every token of that session refused from then on.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey('core.User', on_delete=models.CASCADE, related_name='+')
+    # The sign-in time as the token carries it (`origIat`, seconds since the epoch).
+    orig_iat = models.BigIntegerField()
+    user_agent = models.TextField(blank=True, default='')
+    ip_address = models.CharField(max_length=45, blank=True, default='')
+    # A fingerprint of the user's signing key when the session began: a password change replaces the
+    # key, which silently ends every session signed with the old one.
+    key_hint = models.CharField(max_length=16, blank=True, default='')
+    last_seen_at = models.DateTimeField()
+    ended_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'orig_iat'], name='access_auth_session_unique'),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} @ {self.orig_iat}{" (ended)" if self.ended_at else ""}'

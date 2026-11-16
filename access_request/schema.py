@@ -19,6 +19,7 @@ from access_request.gql_mutations import (
     RemoveAccessSectionManagerMutation,
 )
 from access_request.services import AccessRequestService, SectionManagerService
+from access_request.auth_session_gql import AuthSessionQuery, AuthSessionMutation
 
 
 def _check(user, perms):
@@ -31,7 +32,7 @@ def _sees_all_sections(user):
             or user.has_perms(AccessRequestConfig.gql_ict_approve_perms))
 
 
-class Query(graphene.ObjectType):
+class Query(AuthSessionQuery, graphene.ObjectType):
     access_request = OrderedDjangoFilterConnectionField(
         AccessRequestGQLType,
         orderBy=graphene.List(of_type=graphene.String),
@@ -84,7 +85,7 @@ class Query(graphene.ObjectType):
         return gql_optimizer.query(AccessProfile.objects.filter(*filters).distinct(), info)
 
 
-class Mutation(graphene.ObjectType):
+class Mutation(AuthSessionMutation, graphene.ObjectType):
     create_access_profile = CreateAccessProfileMutation.Field()
     update_access_profile = UpdateAccessProfileMutation.Field()
     delete_access_profile = DeleteAccessProfileMutation.Field()
